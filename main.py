@@ -7,7 +7,12 @@ import numpy as np
 from abc import ABC, abstractmethod
 from typing import Optional, Union
 from graphviz import Digraph
- 
+from sklearn.datasets import load_iris
+from sklearn.metrics import accuracy_score
+from sklearn.datasets import make_regression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+
 # BASE CLASSES (The Foundation)
 
 class BaseEstimator(ABC):
@@ -58,7 +63,6 @@ class ClassifierMixin:
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         """Probability estimates - not all classifiers support this."""
         raise NotImplementedError(f"{self.__class__.__name__} doesn't support predict_proba")
-
 
 # LINEAR MODELS
 
@@ -139,7 +143,6 @@ class LogisticRegression(BaseEstimator, ClassifierMixin):
         y_pred_proba = self.predict_proba(X)
         return np.where(y_pred_proba >= 0.5, 1, 0)
     
-
 # TREE MODELS
 
 class DecisionTreeClassifier(BaseEstimator, ClassifierMixin):
@@ -305,11 +308,90 @@ class DecisionTreeClassifier(BaseEstimator, ClassifierMixin):
         return graph, next_node
 
 
+class DecisionTreeRegressor(BaseEstimator,RegressorMixin):
+
+    def __init__(self, max_depth=None, min_samples_split=2):
+        self.max_depth = max_depth
+        self.min_samples_split = min_samples_split
+        self.tree_ = None
+
+    def _variance(self, y):
+        return np.var(y) if len(y) > 0 else 0
+
+    def _variance_reduction(self, X_column, y, threshold):
+        parent_var = self._variance(y)
+        m = len(y)
+
+        left_mask = X_column <= threshold
+        right_mask = ~left_mask
+
+        if np.sum(left_mask) == 0 or np.sum(right_mask) == 0:
+            return 0
+
+        n_left, n_right = np.sum(left_mask), np.sum(right_mask)
+        child_var = (n_left/m) * self._variance(y[left_mask]) + (n_right/m) * self._variance(y[right_mask])
+        return parent_var - child_var
+
+    def _find_best_split(self, X, y):
+        best_gain = -1
+        split_idx, split_threshold = None, None
+        n_samples, n_features = X.shape
+
+        for feature_idx in range(n_features):
+            thresholds = np.unique(X[:, feature_idx])
+            for t in thresholds:
+                gain = self._variance_reduction(X[:, feature_idx], y, t)
+                if gain > best_gain:
+                    best_gain = gain
+                    split_idx, split_threshold = feature_idx, t
+        return split_idx, split_threshold, best_gain
+
+    def _build_tree(self, X, y, depth=0):
+        if (self.max_depth is not None and depth >= self.max_depth) or \
+           len(y) < self.min_samples_split:
+            return {"leaf": True, "value": np.mean(y)}
+
+        feat_idx, threshold, gain = self._find_best_split(X, y)
+        if gain <= 0 or feat_idx is None:
+            return {"leaf": True, "value": np.mean(y)}
+
+        left_mask = X[:, feat_idx] <= threshold
+        right_mask = ~left_mask
+
+        left_sub = self._build_tree(X[left_mask], y[left_mask], depth+1)
+        right_sub = self._build_tree(X[right_mask], y[right_mask], depth+1)
+
+        return {
+            "leaf": False,
+            "feature": feat_idx,
+            "threshold": threshold,
+            "left": left_sub,
+            "right": right_sub,
+        }
+
+    def fit(self, X, y):
+        self.tree_ = self._build_tree(X, y)
+        return self
+
+    def _predict_sample(self, x, tree):
+        if tree["leaf"]:
+            return tree["value"]
+        if x[tree["feature"]] <= tree["threshold"]:
+            return self._predict_sample(x, tree["left"])
+        else:
+            return self._predict_sample(x, tree["right"])
+
+    def predict(self, X):
+        return np.array([self._predict_sample(x, self.tree_) for x in X])
+
+
 class Knn():
     pass
 
+
 class EnsembleLearning():
     pass
+
 
 class TheRLERegressor():
     pass
@@ -318,44 +400,50 @@ class TheRLERegressor():
 if __name__ == "__main__":
 
     # Generate toy data
-    # np.random.seed(42)
-    # X = np.random.randn(100, 2)
-    # y = (X[:, 0] + X[:, 1] > 0).astype(int)
+    np.random.seed(42)
+    X = np.random.randn(100, 2)
+    y = (X[:, 0] + X[:, 1] > 0).astype(int)
     
     # # Train models
-    # lr = LinearRegression(l_r=1.0, epoch=1000).fit(X, y)
-    # lr_preds = lr.predict(X)
-    # lr_accuracy = np.mean((lr_preds > 0.5).astype(int) == y)
-    # print(f"Linear Regression Accuracy (thresholded): {lr_accuracy:.3f}")
-    # print(f"→ Learned weights: {lr.weights}")
-    # print(f"→ True weights: [1.0, 1.0] (from y = x₁ + x₂ > 0)")
-    # print(f"→ Prediction range: [{lr_preds.min():.2f}, {lr_preds.max():.2f}]")
+    lr = LinearRegression(l_r=1.0, epoch=1000).fit(X, y)
+    lr_preds = lr.predict(X)
+    lr_accuracy = np.mean((lr_preds > 0.5).astype(int) == y)
+    print(f"Linear Regression Accuracy (thresholded): {lr_accuracy:.3f}")
+    print(f"→ Learned weights: {lr.weights}")
+    print(f"→ True weights: [1.0, 1.0] (from y = x₁ + x₂ > 0)")
+    print(f"→ Prediction range: [{lr_preds.min():.2f}, {lr_preds.max():.2f}]")
     
-    # logreg = LogisticRegression(l_r=0.1, epochs=1000).fit(X, y)
-    # log_preds = logreg.predict(X)
-    # log_acc = np.mean(log_preds == y)
-    # print(f"Logistic Regression Accuracy: {log_acc:.3f}")
-    # print(f"→ Final loss: {logreg.loss_history_[-1]:.6f}")
+    logreg = LogisticRegression(l_r=0.1, epochs=1000).fit(X, y)
+    log_preds = logreg.predict(X)
+    log_acc = np.mean(log_preds == y)
+    print(f"Logistic Regression Accuracy: {log_acc:.3f}")
+    print(f"→ Final loss: {logreg.loss_history_[-1]:.6f}")
 
-    # Simple train/test split
-    from sklearn.datasets import load_iris
-    from sklearn.model_selection import train_test_split
-    from sklearn.metrics import accuracy_score
-
+    # Train our toy CART classifier
     # Load dataset
     X, y = load_iris(return_X_y=True)
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.3, random_state=42
     )
 
-    # Train our toy CART classifier
     tree = DecisionTreeClassifier(max_depth=3)
     tree.fit(X_train, y_train)
 
-    # Predict
+    # # Predict
     y_pred = tree.predict(X_test)
     print("Classification accuracy:", accuracy_score(y_test, y_pred))
     feature_names = ["sepal_len", "sepal_wid", "petal_len", "petal_wid"]
     graph, _ = tree.plot_tree(tree.tree_, feature_names)
     graph.render("decision_tree", format="png", cleanup=True)  # Saves as decision_tree.png
     graph.view()  # Opens the image
+
+    X, y = make_regression(n_samples=200, n_features=1, noise=10, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+
+    # # Train our toy CART regressor
+    reg_tree = DecisionTreeRegressor(max_depth=10,min_samples_split=1)
+    reg_tree.fit(X_train, y_train)
+
+    # # Predict
+    y_pred = reg_tree.predict(X_test)
+    print("Regression MSE:", mean_squared_error(y_test, y_pred))
