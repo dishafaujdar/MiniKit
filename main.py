@@ -12,6 +12,10 @@ from sklearn.metrics import accuracy_score
 from sklearn.datasets import make_regression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
+from sklearn.datasets import make_classification
+from collections import Counter
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
 
 # BASE CLASSES (The Foundation)
 
@@ -385,8 +389,36 @@ class DecisionTreeRegressor(BaseEstimator,RegressorMixin):
         return np.array([self._predict_sample(x, self.tree_) for x in X])
 
 
-class Knn():
-    pass
+class KNN():
+    def __init__(self, k=3):
+        self.k = k
+
+    def fit(self, X, y):
+        # Just store training data
+        self.X_train = X
+        self.y_train = y
+
+    def _euclidean_distance(self, x1, x2):
+        return np.sqrt(np.sum((x1 - x2) ** 2))
+
+    def predict(self, X):
+        predictions = []
+        for x in X:
+            # Compute distances to all training points
+            distances = [self._euclidean_distance(x, x_train) for x_train in self.X_train]
+
+            # Get indices of k nearest neighbors
+            k_idx = np.argsort(distances)[:self.k]
+
+            # Get corresponding labels
+            k_neighbor_labels = [self.y_train[i] for i in k_idx]
+
+            # Majority vote
+            most_common = Counter(k_neighbor_labels).most_common(1)[0][0]
+            predictions.append(most_common)
+
+        return np.array(predictions)
+
 
 
 class EnsembleLearning():
@@ -397,53 +429,193 @@ class TheRLERegressor():
     pass
 
 
+class LinearSVM(BaseEstimator,ClassifierMixin):
+
+    def __init__(self,C=None,l_r = 0.01,epochs = 1000):
+    #C = Regularization parameter (None for hard-margin, >0 for soft-margin)
+        self.C = None
+        self.l_r = l_r
+        self.epochs = epochs
+    
+    def fit(self, X, y):
+        n_samples,n_features = X.shape
+        y_= np.where(y <= 0, -1, 1) #conver label into (1,-1) {for easy calculation}
+
+        self.w = np.zeros(n_features)
+        self.b = 0
+
+        for _ in range(self.epochs):
+            for idx,xi in enumerate(X):
+                condition = y_[idx] * (np.dot(xi, self.w) + self.b) >= 1 #this condition is for choosing the correctly classified points
+                if condition:
+                    self.w -= self.l_r * (2 * (1 /self.epochs) * self.w)
+                else:
+                    #misclassified -> hinged loss
+                    if self.C is None:
+                        #hard margin
+                        self.w += self.l_r * (y_[idx] * xi)
+                        self.b += self.l_r * y_[idx]
+
+                    else:
+                        # Soft margin with regularization
+                        self.w -= self.lr * (2 * (1/self.epochs) * self.w - self.C * y_[idx] * xi)
+                        self.b += self.lr * self.C * y_[idx]
+
+    def predict(self, X):
+        approx = np.dot(X,self.w) + self.b
+        return np.sign(approx)
+
+        
+class KernelSVM(BaseEstimator):
+    def __init__(self, C=1.0, l_r=0.001, epochs=1000, gamma=0.5):
+        self.C = C
+        self.lr = l_r
+        self.epochs = epochs
+        self.gamma = gamma  # RBF kernel parameter
+
+    def rbf_kernel(self, X1, X2):
+        # Gaussian RBF kernel
+        sq_dists = np.sum(X1**2, axis=1).reshape(-1, 1) + np.sum(X2**2, axis=1) - 2 * np.dot(X1, X2.T)
+        return np.exp(-self.gamma * sq_dists)
+
+    def fit(self, X, y):
+        n_samples, n_features = X.shape
+        y_ = np.where(y <= 0, -1, 1)
+
+        self.alpha = np.zeros(n_samples)
+        K = self.rbf_kernel(X, X)
+
+        for _ in range(self.epochs):
+            for i in range(n_samples):
+                # Dual coordinate ascent update
+                margin = np.sum(self.alpha * y_ * K[:, i])
+                if y_[i] * margin < 1:
+                    self.alpha[i] += self.lr * (1 - y_[i] * margin)
+                    self.alpha[i] = np.clip(self.alpha[i], 0, self.C)
+
+        self.X = X
+        self.y = y_
+
+    def project(self, X):
+        K = self.rbf_kernel(X, self.X)
+        return np.sum(self.alpha * self.y * K, axis=1)
+
+    def predict(self, X):
+        return np.sign(self.project(X))
+
+
 if __name__ == "__main__":
 
     # Generate toy data
-    np.random.seed(42)
-    X = np.random.randn(100, 2)
-    y = (X[:, 0] + X[:, 1] > 0).astype(int)
+    # np.random.seed(42)
+    # X = np.random.randn(100, 2)
+    # y = (X[:, 0] + X[:, 1] > 0).astype(int)
     
-    # # Train models
-    lr = LinearRegression(l_r=1.0, epoch=1000).fit(X, y)
-    lr_preds = lr.predict(X)
-    lr_accuracy = np.mean((lr_preds > 0.5).astype(int) == y)
-    print(f"Linear Regression Accuracy (thresholded): {lr_accuracy:.3f}")
-    print(f"→ Learned weights: {lr.weights}")
-    print(f"→ True weights: [1.0, 1.0] (from y = x₁ + x₂ > 0)")
-    print(f"→ Prediction range: [{lr_preds.min():.2f}, {lr_preds.max():.2f}]")
+    # Train models
+
+    # lr = LinearRegression(l_r=1.0, epoch=1000).fit(X, y)
+    # lr_preds = lr.predict(X)
+    # lr_accuracy = np.mean((lr_preds > 0.5).astype(int) == y)
+    # print(f"Linear Regression Accuracy (thresholded): {lr_accuracy:.3f}")
+    # print(f"→ Learned weights: {lr.weights}")
+    # print(f"→ True weights: [1.0, 1.0] (from y = x₁ + x₂ > 0)")
+    # print(f"→ Prediction range: [{lr_preds.min():.2f}, {lr_preds.max():.2f}]")
     
-    logreg = LogisticRegression(l_r=0.1, epochs=1000).fit(X, y)
-    log_preds = logreg.predict(X)
-    log_acc = np.mean(log_preds == y)
-    print(f"Logistic Regression Accuracy: {log_acc:.3f}")
-    print(f"→ Final loss: {logreg.loss_history_[-1]:.6f}")
+    # logreg = LogisticRegression(l_r=0.1, epochs=1000).fit(X, y)
+    # log_preds = logreg.predict(X)
+    # log_acc = np.mean(log_preds == y)
+    # print(f"Logistic Regression Accuracy: {log_acc:.3f}")
+    # print(f"→ Final loss: {logreg.loss_history_[-1]:.6f}")
 
     # Train our toy CART classifier
-    # Load dataset
-    X, y = load_iris(return_X_y=True)
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.3, random_state=42
+    # X, y = load_iris(return_X_y=True)
+    # X_train, X_test, y_train, y_test = train_test_split(
+    #     X, y, test_size=0.3, random_state=42
+    # )
+
+    # tree = DecisionTreeClassifier(max_depth=3)
+    # tree.fit(X_train, y_train)
+
+    # Predict
+    # y_pred = tree.predict(X_test)
+    # print("Classification accuracy:", accuracy_score(y_test, y_pred))
+    # feature_names = ["sepal_len", "sepal_wid", "petal_len", "petal_wid"]
+    # graph, _ = tree.plot_tree(tree.tree_, feature_names)
+    # graph.render("decision_tree", format="png", cleanup=True)  # Saves as decision_tree.png
+    # graph.view()  # Opens the image
+
+    # X, y = make_regression(n_samples=200, n_features=1, noise=10, random_state=42)
+    # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+ 
+    # Train our toy CART regressor
+    # reg_tree = DecisionTreeRegressor(max_depth=10,min_samples_split=1)
+    # reg_tree.fit(X_train, y_train)
+
+    # Predict
+    # y_pred = reg_tree.predict(X_test)
+    # print("Regression MSE:", mean_squared_error(y_test, y_pred))
+
+    X, y = make_classification(
+        n_samples=200, n_features=2, n_classes=2,
+        n_redundant=0, n_clusters_per_class=1,
+        class_sep=1.5, random_state=42
     )
 
-    tree = DecisionTreeClassifier(max_depth=3)
-    tree.fit(X_train, y_train)
+    # Hard margin SVM
+    # svm_hard = LinearSVM(C=None, l_r=0.001, epochs=1000)
+    # svm_hard.fit(X, y)
+    # preds_hard = svm_hard.predict(X)
+    # print("Hard margin accuracy:", np.mean(preds_hard == np.where(y==0,-1,1)))
 
-    # # Predict
-    y_pred = tree.predict(X_test)
-    print("Classification accuracy:", accuracy_score(y_test, y_pred))
-    feature_names = ["sepal_len", "sepal_wid", "petal_len", "petal_wid"]
-    graph, _ = tree.plot_tree(tree.tree_, feature_names)
-    graph.render("decision_tree", format="png", cleanup=True)  # Saves as decision_tree.png
-    graph.view()  # Opens the image
+    # Soft margin SVM
+    # svm_soft = LinearSVM(C=1.0, l_r=0.001, epochs=1000)
+    # svm_soft.fit(X, y)
+    # preds_soft = svm_soft.predict(X)
+    # print("Soft margin accuracy:", np.mean(preds_soft == np.where(y==0,-1,1)))
 
-    X, y = make_regression(n_samples=200, n_features=1, noise=10, random_state=42)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+    # Kernel SVM (RBF)
+    # svm_kernel = KernelSVM(C=1.0, l_r=0.001, epochs=500, gamma=0.5)
+    # svm_kernel.fit(X, y)
+    # preds_kernel = svm_kernel.predict(X)
+    # print("Kernel SVM accuracy:", np.mean(preds_kernel == np.where(y==0,-1,1)))
 
-    # # Train our toy CART regressor
-    reg_tree = DecisionTreeRegressor(max_depth=10,min_samples_split=1)
-    reg_tree.fit(X_train, y_train)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # # Predict
-    y_pred = reg_tree.predict(X_test)
-    print("Regression MSE:", mean_squared_error(y_test, y_pred))
+    knn = KNN(k=5)
+    knn.fit(X_train, y_train)
+    x_min, x_max = X[:, 0].min() - 1, X[:, 0].max() + 1
+    y_min, y_max = X[:, 1].min() - 1, X[:, 1].max() + 1
+    xx, yy = np.meshgrid(np.arange(x_min, x_max, 0.05),
+                         np.arange(y_min, y_max, 0.05))
+
+    # Predict on mesh grid
+    Z = knn.predict(np.c_[xx.ravel(), yy.ravel()])
+    Z = Z.reshape(xx.shape)
+
+    # Custom color maps
+    cmap_light = ListedColormap(['#FFAAAA', '#AAAAFF'])
+    cmap_bold = ListedColormap(['#FF0000', '#0000FF'])
+
+    # Plot decision boundary
+    plt.figure(figsize=(8, 6))
+    plt.contourf(xx, yy, Z, cmap=cmap_light, alpha=0.6)
+
+    # Plot training points
+    plt.scatter(X_train[:, 0], X_train[:, 1], c=y_train, cmap=cmap_bold, edgecolor="k", s=60, label="Train")
+    plt.scatter(X_test[:, 0], X_test[:, 1], c=y_test, cmap=cmap_bold, marker="*", s=120, edgecolor="k", label="Test")
+
+    plt.title("KNN Decision Boundary (k=5)")
+    plt.xlabel("Feature 1")
+    plt.ylabel("Feature 2")
+    plt.legend()
+    plt.show()
+
+    knn.fit(X_train, y_train)
+
+    preds = knn.predict(X_test)
+
+    acc = np.mean(preds == y_test)
+    print("KNN accuracy:", acc)
+
+
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
